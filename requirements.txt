@@ -1,0 +1,2 @@
+colorama==0.3.7
+mpi4py==2.0.0
