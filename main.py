@@ -2,10 +2,13 @@ import sys
 import collections
 from enum import Enum
 import time
+import random
 
 import colorama
 from mpi4py import MPI
 
+LOST_PING_PROBABILITY = 0.2
+LOST_PONG_PROBABILITY = 0.0
 
 comm = MPI.COMM_WORLD
 
@@ -146,6 +149,7 @@ class Node:
                 self.send_token_pong()
 
             elif self.state == NodeState.BOTH_TOKENS:
+                self.log.critical(str(self.token_ping))
                 self.token_ping, self.token_pong = \
                     self.incarnate_tokens(self.token_ping.value)
                 self.send_token_ping()
@@ -154,7 +158,10 @@ class Node:
     def send_token_ping(self):
         time.sleep(0.5)
         self.m = self.token_ping.value
-        self.token_ping.send(self.next_node)
+        if random.random() >= LOST_PING_PROBABILITY:
+            self.token_ping.send(self.next_node)
+        else:
+            self.log.critical("oops, i've just lost ping token")
         self.token_ping = None
         if self.state == NodeState.TOKEN_PING:
             self.state = NodeState.NO_TOKEN
@@ -164,7 +171,10 @@ class Node:
     def send_token_pong(self):
         time.sleep(1)
         self.m = self.token_pong.value
-        self.token_pong.send(self.next_node)
+        if random.random() >= LOST_PONG_PROBABILITY:
+            self.token_pong.send(self.next_node)
+        else:
+            self.log.critical("oops, i've just lost pong token")
         self.token_pong = None
         if self.state == NodeState.TOKEN_PONG:
             self.state = NodeState.NO_TOKEN
@@ -189,10 +199,14 @@ class Node:
         if token.value == self.m:
             if self.m > 0:
                 self.log.warning('PONG TOKEN LOST')
-                self.regenerate_token(TokenType.PONG, token)
+                t = self.regenerate_token(TokenType.PONG, -token.value)
+                self.token_pong = t
+                self.state = NodeState.TOKEN_PONG
             else:
                 self.log.warning('PING TOKEN LOST')
-                self.regenerate_token(TokenType.PING, token)
+                t = self.regenerate_token(TokenType.PING, -token.value)
+                self.token_ping = t
+                self.state = NodeState.TOKEN_PING
         elif abs(token.value) < abs(self.m):
             self.log.critical("received some old token %s, deleting" % token)
             return None
@@ -218,11 +232,12 @@ class Node:
                 self.log.critical("ok, now we can panic")
 
     def incarnate_tokens(self, x):
+        self.log.critical(str(x))
         return Token(TokenType.PING, abs(x + 1)),\
             Token(TokenType.PONG, - abs(x + 1))
 
-    def regenerate_token(self, x):
-        pass
+    def regenerate_token(self, token_type, value):
+        return Token(token_type, value)
 
 
 if __name__ == '__main__':
