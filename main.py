@@ -55,8 +55,7 @@ class Logger:
     def _message(self, color, message):
         print(colorama.Fore.MAGENTA + "%05d\t" % (LamportClock.value) +
               colorama.Fore.CYAN + ("%02d\t" % self.rank) +
-              color + message, file=sys.stderr)
-        sys.stderr.flush()
+              color + message, file=sys.stderr, flush=True)
 
     def info(self, message):
         self._message(Logger.colors['info'], message)
