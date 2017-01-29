@@ -68,6 +68,7 @@ class Logger:
 
 
 class Message:
+
     def __init__(self, message, tag):
         self.message = message
         self.tag = tag.value
@@ -125,7 +126,6 @@ class Node:
             self.log.warning("I am the chosen one, generating first tokens")
             Token(TokenType.PING, 1).send(self.next_node)
             Token(TokenType.PONG, -1).send(self.next_node)
-            self.m = -1
 
         while True:
             self.log.info('state %s' % self.state.name)
@@ -134,27 +134,55 @@ class Node:
                 self.listen()
 
             elif self.state == NodeState.TOKEN_PING:
-                self.log.info("entering Critical Section")
-                self.log.info("leaving Critical Section")
+                self.log.warning("entering Critical Section")
+                time.sleep(0.5)
+                self.log.warning("leaving Critical Section")
 
-                self.m = self.token_ping.value
-                self.token_ping.send(self.next_node)
-                self.token_ping = None
-                self.state = NodeState.NO_TOKEN
+                if self.ilisten():  # receive old messages
+                    continue
+                self.send_token_ping()
 
             elif self.state == NodeState.TOKEN_PONG:
-                self.m = self.token_pong.value
-                self.token_pong.send(self.next_node)
-                self.token_pong = None
-                self.state = NodeState.NO_TOKEN
+                self.send_token_pong()
 
             elif self.state == NodeState.BOTH_TOKENS:
-                self.incarnate_tokens(self.token_ping.value)
+                self.token_ping, self.token_pong = \
+                    self.incarnate_tokens(self.token_ping.value)
+                self.send_token_ping()
+                self.send_token_pong()
+
+    def send_token_ping(self):
+        time.sleep(0.5)
+        self.m = self.token_ping.value
+        self.token_ping.send(self.next_node)
+        self.token_ping = None
+        if self.state == NodeState.TOKEN_PING:
+            self.state = NodeState.NO_TOKEN
+        else:
+            self.state = NodeState.TOKEN_PONG
+
+    def send_token_pong(self):
+        time.sleep(1)
+        self.m = self.token_pong.value
+        self.token_pong.send(self.next_node)
+        self.token_pong = None
+        if self.state == NodeState.TOKEN_PONG:
+            self.state = NodeState.NO_TOKEN
+        else:
+            self.state = NodeState.TOKEN_PING
 
     def listen(self):
         token = Message.handle(comm.recv())
         self.log.info("received token %s" % token)
         self.become(token)
+
+    def ilisten(self):
+        received = False
+        while comm.iprobe():
+            token = Message.handle(comm.recv())
+            self.become(token)
+            received = True
+        return received
 
     def become(self, token):
         # let the ifs begin
@@ -190,7 +218,7 @@ class Node:
                 self.log.critical("ok, now we can panic")
 
     def incarnate_tokens(self, x):
-        return Token(TokenType.PING, abs(x)),\
+        return Token(TokenType.PING, abs(x + 1)),\
             Token(TokenType.PONG, - abs(x + 1))
 
     def regenerate_token(self, x):
